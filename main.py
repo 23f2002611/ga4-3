@@ -49,10 +49,16 @@ async def execute(q: str):
             "arguments": json.dumps({"employee_id": int(match.group(1))})
         }
     
-    # 4. Performance Bonus
+    # 4. Performance Bonus - Multiple phrasings
     match = re.search(r'(?:calculate\s+)?performance\s+bonus\s+for\s+employee\s+(\d+)\s+for\s+(\d{4})', query_lower)
     if not match:
         match = re.search(r'bonus\s+for\s+emp(?:loyee)?\s+(\d+)\s+in\s+(\d{4})', query_lower)
+    if not match:
+        # "Emp 27756 bonus 2025" format
+        match = re.search(r'emp(?:loyee)?\s+(\d+)\s+bonus\s+(\d{4})', query_lower)
+    if not match:
+        # "bonus emp 27756 2025" format
+        match = re.search(r'bonus\s+emp(?:loyee)?\s+(\d+)\s+(\d{4})', query_lower)
     if match:
         return {
             "name": "calculate_performance_bonus",
