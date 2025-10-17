@@ -1,9 +1,3 @@
 {
-  "version": 2,
-  "routes": [
-    {
-      "src": "/execute",
-      "dest": "/api/main.py"
-    }
-  ]
+  "version": 2
 }
