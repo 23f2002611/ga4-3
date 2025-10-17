@@ -4,11 +4,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import re
 import json
-from collections import OrderedDict
 
 app = FastAPI()
 
-# Enable CORS (GET allowed from anywhere)
+# Enable CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,69 +15,63 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Canonical function definitions and their parameter orders
-FUNCTIONS = {
-    "get_ticket_status": ["ticket_id"],
-    "schedule_meeting": ["date", "time", "meeting_room"],
-    "get_expense_balance": ["employee_id"],
-    "calculate_performance_bonus": ["employee_id", "current_year"],
-    "report_office_issue": ["issue_code", "department"],
-}
-
-# Patterns → (function_name, {group_number: parameter_name})
-QUESTION_PATTERNS = [
-    (r"what\s+is\s+the\s+status\s+of\s+ticket\s+(\d+)\??",
-     "get_ticket_status", {1: "ticket_id"}),
-
-    (r"schedule\s+a\s+meeting\s+on\s+(\d{4}-\d{2}-\d{2})\s+at\s+(\d{2}:\d{2})\s+in\s+room\s+(\w+)\.?",
-     "schedule_meeting", {1: "date", 2: "time", 3: "meeting_room"}),
-
-    (r"show\s+my\s+expense\s+balance\s+for\s+employee\s+(\d+)\.?",
-     "get_expense_balance", {1: "employee_id"}),
-
-    # main official phrasing
-    (r"calculate\s+performance\s+bonus\s+for\s+employee\s+(\d+)\s+for\s+(\d{4})\.?",
-     "calculate_performance_bonus", {1: "employee_id", 2: "current_year"}),
-
-    # 👇 alternate phrasing (the one the grader used)
-    (r"what\s+bonus\s+for\s+emp\s+(\d+)\s+in\s+(\d{4})\??",
-     "calculate_performance_bonus", {1: "employee_id", 2: "current_year"}),
-
-    (r"report\s+office\s+issue\s+(\d+)\s+for\s+the\s+(\w+)\s+department\.?",
-     "report_office_issue", {1: "issue_code", 2: "department"}),
-]
-
-
+# Pattern matching with explicit parameter extraction
 @app.get("/execute")
 async def execute(q: str):
-    query = q.strip().lower()
-
-    for pattern, func_name, group_map in QUESTION_PATTERNS:
-        match = re.search(pattern, query)
-        if not match:
-            continue
-
-        # Create OrderedDict to maintain correct parameter order
-        ordered_args = OrderedDict()
-        for param in FUNCTIONS[func_name]:
-            # find which regex group gives this param
-            for idx, pname in group_map.items():
-                if pname == param:
-                    val = match.group(idx)
-                    # convert to int if numeric
-                    try:
-                        val = int(val)
-                    except ValueError:
-                        pass
-                    ordered_args[param] = val
-                    break
-
-        # Encode as JSON string preserving order
-        return JSONResponse(
-            {
-                "name": func_name,
-                "arguments": json.dumps(ordered_args),
-            }
-        )
-
+    query = q.strip()
+    query_lower = query.lower()
+    
+    # 1. Ticket Status
+    match = re.search(r'ticket\s+(\d+)', query_lower)
+    if match:
+        return {
+            "name": "get_ticket_status",
+            "arguments": json.dumps({"ticket_id": int(match.group(1))})
+        }
+    
+    # 2. Schedule Meeting
+    match = re.search(r'schedule\s+a\s+meeting\s+on\s+([\d-]+)\s+at\s+([\d:]+)\s+in\s+room\s+(\w+)', query_lower)
+    if match:
+        return {
+            "name": "schedule_meeting",
+            "arguments": json.dumps({
+                "date": match.group(1),
+                "time": match.group(2),
+                "meeting_room": f"Room {match.group(3).upper()}"
+            })
+        }
+    
+    # 3. Expense Balance
+    match = re.search(r'expense\s+balance\s+for\s+employee\s+(\d+)', query_lower)
+    if match:
+        return {
+            "name": "get_expense_balance",
+            "arguments": json.dumps({"employee_id": int(match.group(1))})
+        }
+    
+    # 4. Performance Bonus
+    match = re.search(r'(?:calculate\s+)?performance\s+bonus\s+for\s+employee\s+(\d+)\s+for\s+(\d{4})', query_lower)
+    if not match:
+        match = re.search(r'bonus\s+for\s+emp(?:loyee)?\s+(\d+)\s+in\s+(\d{4})', query_lower)
+    if match:
+        return {
+            "name": "calculate_performance_bonus",
+            "arguments": json.dumps({
+                "employee_id": int(match.group(1)),
+                "current_year": int(match.group(2))
+            })
+        }
+    
+    # 5. Report Office Issue
+    match = re.search(r'report\s+office\s+issue\s+(\d+)\s+for\s+(?:the\s+)?(\w+)', query_lower)
+    if match:
+        dept = match.group(2).capitalize()
+        return {
+            "name": "report_office_issue",
+            "arguments": json.dumps({
+                "issue_code": int(match.group(1)),
+                "department": dept
+            })
+        }
+    
     raise HTTPException(status_code=400, detail="Unrecognized question format")
